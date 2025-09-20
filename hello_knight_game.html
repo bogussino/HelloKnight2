@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello Knight</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+        }
+        
+        canvas {
+            border: 3px solid #4a4a4a;
+            border-radius: 10px;
+            background: linear-gradient(180deg, #0f0f23, #1a1a2e);
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        .ui {
+            margin-top: 10px;
+            text-align: center;
+        }
+        
+        .controls {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #cccccc;
+        }
+        
+        .touch-controls {
+            display: none;
+            margin-top: 20px;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .touch-controls.active {
+            display: flex;
+        }
+        
+        .game-controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-btn {
+            background: rgba(78, 205, 196, 0.2);
+            border: 2px solid #4ecdc4;
+            border-radius: 8px;
+            color: white;
+            padding: 8px 16px;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .control-btn:hover {
+            background: rgba(78, 205, 196, 0.4);
+        }
+        
+        .control-btn.active {
+            background: rgba(78, 205, 196, 0.6);
+        }
+        
+        .touch-btn {
+            background: rgba(78, 205, 196, 0.8);
+            border: 2px solid #4ecdc4;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .touch-btn:active {
+            background: rgba(78, 205, 196, 1);
+            transform: scale(0.95);
+        }
+        
+        .touch-btn.rectangle {
+            border-radius: 15px;
+            width: 80px;
+            height: 50px;
+        }
+        
+        @media (max-width: 768px) {
+            .touch-controls.active {
+                display: flex;
+            }
+        }
+        
+        .title {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #4ecdc4;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="title">🗡️ HELLO KNIGHT 🗡️</div>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div class="ui">
+        <div>Vita: <span id="health">5</span> ❤️ | Punteggio: <span id="score">0</span> | Livello: <span id="level">1</span></div>
+    </div>
+    <div class="controls">
+        Usa le freccette direzionali per muoverti e saltare (SU), attacca con X!
+    </div>
+    
+    <div class="game-controls">
+        <button class="control-btn" id="pauseBtn">PAUSA</button>
+        <button class="control-btn" id="mobileToggle">MODALITÀ MOBILE</button>
+    </div>
+    
+    <div class="touch-controls" id="touchControls">
+        <div class="touch-btn" id="touchLeft">←</div>
+        <div class="touch-btn" id="touchRight">→</div>
+        <div class="touch-btn rectangle" id="touchJump">SU</div>
+        <div class="touch-btn rectangle" id="touchAttack">X</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        const game = {
+            health: 5,
+            score: 0,
+            level: 1,
+            gameOver: false,
+            won: false,
+            keys: {},
+            paused: false,
+            mobileMode: false,
+            hitStreak: 0, // Barra hit streak (max 6)
+            maxHitStreak: 6
+        };
+        
+        // Player object (Hello Knight)
+        const player = {
+            x: 100,
+            y: 250,
+            width: 40,
+            height: 50,
+            velX: 0,
+            velY: 0,
+            speed: 3,
+            jumpPower: 8,
+            onGround: false,
+            attacking: false,
+            attackTimer: 0,
+            attackCooldown: 0,
+            direction: 1,
+            coyoteTime: 0,
+            invincible: false,
+            invincibleTimer: 0
+        };
+        
+        // Platforms per level
+        const levelPlatforms = {
+            1: [
+                {x: 0, y: 350, width: 200, height: 50},
+                {x: 250, y: 280, width: 150, height: 20},
+                {x: 450, y: 200, width: 150, height: 20},
+                {x: 650, y: 320, width: 150, height: 80}
+            ],
+            2: [
+                {x: 0, y: 380, width: 120, height: 20},
+                {x: 180, y: 300, width: 100, height: 20},
+                {x: 340, y: 220, width: 120, height: 20},
+                {x: 520, y: 300, width: 100, height: 20},
+                {x: 680, y: 220, width: 120, height: 180}
+            ],
+            3: [
+                {x: 50, y: 350, width: 100, height: 20},
+                {x: 200, y: 250, width: 80, height: 20},
+                {x: 350, y: 150, width: 100, height: 20},
+                {x: 500, y: 250, width: 80, height: 20},
+                {x: 650, y: 350, width: 100, height: 20},
+                {x: 300, y: 320, width: 200, height: 20}
+            ],
+            4: [
+                {x: 0, y: 300, width: 150, height: 20},
+                {x: 200, y: 180, width: 120, height: 20},
+                {x: 380, y: 280, width: 120, height: 20},
+                {x: 550, y: 160, width: 120, height: 20},
+                {x: 720, y: 300, width: 80, height: 100},
+                {x: 100, y: 380, width: 600, height: 20}
+            ],
+            5: [
+                {x: 100, y: 380, width: 600, height: 20},
+                {x: 50, y: 300, width: 100, height: 20},
+                {x: 200, y: 220, width: 100, height: 20},
+                {x: 350, y: 140, width: 100, height: 20},
+                {x: 500, y: 220, width: 100, height: 20},
+                {x: 650, y: 300, width: 100, height: 20}
+            ]
+        };
+        
+        // Current platforms
+        let platforms = levelPlatforms[1];
+        
+        // Enemies per level
+        const levelEnemies = {
+            1: [
+                {x: 300, y: 240, width: 30, height: 30, velX: -1, health: 2, maxHealth: 2, type: 'gruz', invincible: false, invincibleTimer: 0},
+                {x: 500, y: 160, width: 25, height: 25, velX: 1.5, health: 1, maxHealth: 1, type: 'fly', invincible: false, invincibleTimer: 0},
+                {x: 700, y: 280, width: 35, height: 35, velX: -0.8, health: 3, maxHealth: 3, type: 'big', invincible: false, invincibleTimer: 0}
+            ],
+            2: [
+                {x: 220, y: 260, width: 28, height: 28, velX: -1.2, health: 2, maxHealth: 2, type: 'spiker', invincible: false, invincibleTimer: 0},
+                {x: 380, y: 180, width: 22, height: 22, velX: 2, health: 1, maxHealth: 1, type: 'buzzer', invincible: false, invincibleTimer: 0},
+                {x: 560, y: 260, width: 32, height: 32, velX: -0.7, health: 3, maxHealth: 3, type: 'tank', invincible: false, invincibleTimer: 0},
+                {x: 250, y: 340, width: 26, height: 26, velX: 1.5, health: 2, maxHealth: 2, type: 'hopper', invincible: false, invincibleTimer: 0}
+            ],
+            3: [
+                {x: 90, y: 310, width: 24, height: 24, velX: -1.8, health: 2, maxHealth: 2, type: 'runner', invincible: false, invincibleTimer: 0},
+                {x: 240, y: 210, width: 20, height: 20, velX: 2.5, health: 1, maxHealth: 1, type: 'dart', invincible: false, invincibleTimer: 0},
+                {x: 390, y: 110, width: 30, height: 30, velX: -1, health: 4, maxHealth: 4, type: 'heavy', invincible: false, invincibleTimer: 0},
+                {x: 420, y: 280, width: 28, height: 28, velX: -1.3, health: 3, maxHealth: 3, type: 'guard', invincible: false, invincibleTimer: 0}
+            ],
+            4: [
+                {x: 75, y: 260, width: 26, height: 26, velX: -2, health: 3, maxHealth: 3, type: 'elite', invincible: false, invincibleTimer: 0},
+                {x: 260, y: 140, width: 18, height: 18, velX: 3, health: 1, maxHealth: 1, type: 'wisp', invincible: false, invincibleTimer: 0},
+                {x: 440, y: 240, width: 34, height: 34, velX: -0.9, health: 4, maxHealth: 4, type: 'brute', invincible: false, invincibleTimer: 0},
+                {x: 590, y: 120, width: 24, height: 24, velX: 2.2, health: 2, maxHealth: 2, type: 'shadow', invincible: false, invincibleTimer: 0},
+                {x: 140, y: 340, width: 30, height: 30, velX: 1.6, health: 3, maxHealth: 3, type: 'knight', invincible: false, invincibleTimer: 0},
+                {x: 500, y: 340, width: 28, height: 28, velX: -1.4, health: 2, maxHealth: 2, type: 'sentinel', invincible: false, invincibleTimer: 0}
+            ],
+            5: [
+                {x: 90, y: 260, width: 32, height: 32, velX: -1.5, health: 5, maxHealth: 5, type: 'boss1', invincible: false, invincibleTimer: 0},
+                {x: 240, y: 180, width: 20, height: 20, velX: 3.5, health: 1, maxHealth: 1, type: 'minion', invincible: false, invincibleTimer: 0},
+                {x: 390, y: 100, width: 36, height: 36, velX: -1, health: 6, maxHealth: 6, type: 'boss2', invincible: false, invincibleTimer: 0},
+                {x: 540, y: 180, width: 24, height: 24, velX: 2.8, health: 2, maxHealth: 2, type: 'phantom', invincible: false, invincibleTimer: 0},
+                {x: 690, y: 260, width: 34, height: 34, velX: -1.2, health: 4, maxHealth: 4, type: 'champion', invincible: false, invincibleTimer: 0},
+                {x: 300, y: 280, width: 28, height: 28, velX: 1.7, health: 3, maxHealth: 3, type: 'wraith', invincible: false, invincibleTimer: 0},
+                {x: 450, y: 280, width: 26, height: 26, velX: -1.8, health: 3, maxHealth: 3, type: 'demon', invincible: false, invincibleTimer: 0}
+            ]
+        };
+        
+        // Current enemies
+        let enemies = [...levelEnemies[1]];
+        
+        // Particles for effects
+        const particles = [];
+        
+        // Check level progression
+        function checkLevelComplete() {
+            const aliveEnemies = enemies.filter(enemy => enemy.health > 0);
+            
+            if (aliveEnemies.length === 0 && !game.gameOver && !game.won) {
+                if (game.level < 5) {
+                    // Next level
+                    game.level++;
+                    game.health = 5; // Ripristina vita
+                    
+                    // Load new level
+                    platforms = levelPlatforms[game.level];
+                    enemies = [...levelEnemies[game.level]];
+                    
+                    // Reset player position
+                    player.x = 100;
+                    player.y = 250;
+                    player.velX = 0;
+                    player.velY = 0;
+                    
+                    // Level bonus
+                    game.score += 200;
+                } else {
+                    // Won the game!
+                    game.won = true;
+                }
+            }
+        }
+        
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            game.keys[e.code] = true;
+            
+            // Pause with ESC or P
+            if (e.code === 'Escape' || e.code === 'KeyP') {
+                e.preventDefault();
+                togglePause();
+            }
+            
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            game.keys[e.code] = false;
+        });
+        
+        // Pause functionality
+        function togglePause() {
+            game.paused = !game.paused;
+            const pauseBtn = document.getElementById('pauseBtn');
+            pauseBtn.textContent = game.paused ? 'RIPRENDI' : 'PAUSA';
+        }
+        
+        // Mobile mode toggle
+        function toggleMobileMode() {
+            game.mobileMode = !game.mobileMode;
+            const mobileToggle = document.getElementById('mobileToggle');
+            const touchControls = document.getElementById('touchControls');
+            
+            if (game.mobileMode) {
+                touchControls.classList.add('active');
+                mobileToggle.classList.add('active');
+                mobileToggle.textContent = 'MODALITÀ PC';
+            } else {
+                touchControls.classList.remove('active');
+                mobileToggle.classList.remove('active');
+                mobileToggle.textContent = 'MODALITÀ MOBILE';
+            }
+        }
+        
+        // Touch controls for mobile
+        function setupTouchControls() {
+            const touchLeft = document.getElementById('touchLeft');
+            const touchRight = document.getElementById('touchRight');
+            const touchJump = document.getElementById('touchJump');
+            const touchAttack = document.getElementById('touchAttack');
+            
+            // Left arrow
+            touchLeft.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                game.keys['ArrowLeft'] = true;
+            });
+            touchLeft.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                game.keys['ArrowLeft'] = false;
+            });
+            
+            // Right arrow
+            touchRight.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                game.keys['ArrowRight'] = true;
+            });
+            touchRight.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                game.keys['ArrowRight'] = false;
+            });
+            
+            // Jump (UP arrow)
+            touchJump.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                game.keys['ArrowUp'] = true;
+            });
+            touchJump.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                game.keys['ArrowUp'] = false;
+            });
+            
+            // Attack (X)
+            touchAttack.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                game.keys['KeyX'] = true;
+            });
+            touchAttack.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                game.keys['KeyX'] = false;
+            });
+            
+            // Also handle mouse events for desktop testing
+            [touchLeft, touchRight, touchJump, touchAttack].forEach(btn => {
+                btn.addEventListener('mousedown', (e) => {
+                    const key = btn.id === 'touchLeft' ? 'ArrowLeft' :
+                               btn.id === 'touchRight' ? 'ArrowRight' :
+                               btn.id === 'touchJump' ? 'ArrowUp' : 'KeyX';
+                    game.keys[key] = true;
+                });
+                
+                btn.addEventListener('mouseup', (e) => {
+                    const key = btn.id === 'touchLeft' ? 'ArrowLeft' :
+                               btn.id === 'touchRight' ? 'ArrowRight' :
+                               btn.id === 'touchJump' ? 'ArrowUp' : 'KeyX';
+                    game.keys[key] = false;
+                });
+            });
+        }
+        
+        setupTouchControls();
+        
+        // Setup control buttons
+        document.getElementById('pauseBtn').addEventListener('click', togglePause);
+        document.getElementById('mobileToggle').addEventListener('click', toggleMobileMode);
+        
+        // Helper functions
+        function drawRect(x, y, width, height, color, outline = false) {
+            if (outline) {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, width, height);
+            } else {
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, width, height);
+            }
+        }
+        
+        function drawCircle(x, y, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawText(text, x, y, color = 'white', size = '16px') {
+            ctx.fillStyle = color;
+            ctx.font = `${size} Courier New`;
+            ctx.textAlign = 'center';
+            ctx.fillText(text, x, y);
+        }
+        
+        function collision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+        
+        function createParticle(x, y, color = '#4ecdc4') {
+            particles.push({
+                x: x,
+                y: y,
+                velX: (Math.random() - 0.5) * 4,
+                velY: Math.random() * -3 - 1,
+                life: 30,
+                color: color
+            });
+        }
+        
+        // Update player
+        function updatePlayer() {
+            if (game.gameOver || game.paused) return;
+            
+            // Movement (update direction based on movement)
+            if (game.keys['ArrowLeft']) {
+                player.velX = -player.speed;
+                player.direction = -1;
+            } else if (game.keys['ArrowRight']) {
+                player.velX = player.speed;
+                player.direction = 1;
+            } else {
+                player.velX *= 0.8; // Friction
+            }
+            
+            // Jumping with coyote time (now with UP arrow)
+            if (game.keys['ArrowUp'] && (player.onGround || player.coyoteTime > 0)) {
+                player.velY = -player.jumpPower;
+                player.onGround = false;
+                player.coyoteTime = 0; // Reset coyote time after jumping
+            }
+            
+            // Update coyote time
+            if (player.onGround) {
+                player.coyoteTime = 8; // 8 frame di coyote time
+            } else if (player.coyoteTime > 0) {
+                player.coyoteTime--;
+            }
+            
+            // Attacking
+            if (game.keys['KeyX'] && !player.attacking && player.attackCooldown <= 0) {
+                player.attacking = true;
+                player.attackTimer = 15;
+                player.attackCooldown = 45; // 0.75 secondi a 60fps
+            }
+            
+            // Update attack timers
+            if (player.attacking) {
+                player.attackTimer--;
+                if (player.attackTimer <= 0) {
+                    player.attacking = false;
+                }
+            }
+            
+            if (player.attackCooldown > 0) {
+                player.attackCooldown--;
+            }
+            
+            // Update invincibility frames
+            if (player.invincible) {
+                player.invincibleTimer--;
+                if (player.invincibleTimer <= 0) {
+                    player.invincible = false;
+                }
+            }
+            
+            // Apply gravity
+            player.velY += 0.2;
+            if (player.velY > 15) player.velY = 15;
+            
+            // Update position
+            player.x += player.velX;
+            player.y += player.velY;
+            
+            // Platform collision
+            player.onGround = false;
+            platforms.forEach(platform => {
+                if (collision(player, platform)) {
+                    if (player.velY > 0) { // Falling
+                        player.y = platform.y - player.height;
+                        player.velY = 0;
+                        player.onGround = true;
+                    }
+                }
+            });
+            
+            // Screen bounds
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+            if (player.y > canvas.height) {
+                game.health--;
+                player.x = 100;
+                player.y = 250;
+                player.velX = 0;
+                player.velY = 0;
+                
+                if (game.health <= 0) {
+                    game.gameOver = true;
+                }
+            }
+            
+            // Check level completion
+            checkLevelComplete();
+        }
+        
+        // Update enemies
+        function updateEnemies() {
+            if (game.paused) return;
+            enemies.forEach((enemy, index) => {
+                if (enemy.health <= 0) return;
+                
+                // Update invincibility frames
+                if (enemy.invincible) {
+                    enemy.invincibleTimer--;
+                    if (enemy.invincibleTimer <= 0) {
+                        enemy.invincible = false;
+                    }
+                }
+                
+                enemy.x += enemy.velX;
+                
+                // Bounce off screen edges
+                if (enemy.x <= 0 || enemy.x >= canvas.width - enemy.width) {
+                    enemy.velX *= -1;
+                }
+                
+                // Platform collision for ground enemies
+                if (enemy.type === 'gruz' || enemy.type === 'big') {
+                    let onPlatform = false;
+                    platforms.forEach(platform => {
+                        if (collision(enemy, platform) && enemy.velX !== 0) {
+                            // Turn around at platform edges
+                            if (enemy.x <= platform.x || enemy.x >= platform.x + platform.width - enemy.width) {
+                                enemy.velX *= -1;
+                            }
+                            onPlatform = true;
+                        }
+                    });
+                }
+                
+                // Floating movement for fly enemy
+                if (enemy.type === 'fly' || enemy.type === 'buzzer' || enemy.type === 'dart' || 
+                    enemy.type === 'wisp' || enemy.type === 'phantom' || enemy.type === 'minion') {
+                    enemy.y += Math.sin(Date.now() * 0.005 + index) * 0.5;
+                }
+                
+                // Check collisions
+                let playerHit = false;
+                let enemyHit = false;
+                
+                // Attack collision (only when attacking)
+                if (player.attacking && enemy.health > 0) {
+                    // Calcola posizione e area dell'aculeo
+                    const centerX = player.x + player.width / 2;
+                    const centerY = player.y + player.height / 2;
+                    const attackProgress = (15 - player.attackTimer) / 15;
+                    
+                    let angle;
+                    if (player.direction > 0) {
+                        angle = -Math.PI/4 + (attackProgress * Math.PI/2);
+                    } else {
+                        angle = -3*Math.PI/4 - (attackProgress * Math.PI/2);
+                    }
+                    
+                    const nailX = centerX + Math.cos(angle) * 20;
+                    const nailY = centerY + Math.sin(angle) * 20;
+                    const nailLength = 105;
+                    
+                    // Area di collisione dell'aculeo (rettangolo ruotato)
+                    const nailTipX = nailX + Math.cos(angle) * (nailLength/2);
+                    const nailTipY = nailY + Math.sin(angle) * (nailLength/2);
+                    
+                    // Controllo collisione semplificato: distanza dal nemico alla linea dell'aculeo
+                    const enemyCenterX = enemy.x + enemy.width/2;
+                    const enemyCenterY = enemy.y + enemy.height/2;
+                    
+                    const distToNail = Math.abs((nailTipY - nailY) * enemyCenterX - (nailTipX - nailX) * enemyCenterY + nailTipX * nailY - nailTipY * nailX) / Math.sqrt(Math.pow(nailTipY - nailY, 2) + Math.pow(nailTipX - nailX, 2));
+                    const distToCenter = Math.sqrt(Math.pow(enemyCenterX - centerX, 2) + Math.pow(enemyCenterY - centerY, 2));
+                    
+                    // Hitbox dell'aculeo intermedia
+                    if (distToNail < 30 && distToCenter < nailLength/2 + 45) {
+                        // Check if enemy is not invincible
+                        if (!enemy.invincible) {
+                            enemyHit = true;
+                            enemy.health--;
+                            game.score += 10;
+                            
+                            // Aggiungi 1 alla barra hit streak (max 6)
+                            if (game.hitStreak < game.maxHitStreak) {
+                                game.hitStreak++;
+                            }
+                            
+                            createParticle(enemy.x + enemy.width/2, enemy.y + enemy.height/2, '#ff6b6b');
+                            
+                            // Set enemy invincibility (0.5 secondi = 30 frame)
+                            enemy.invincible = true;
+                            enemy.invincibleTimer = 30;
+                            
+                            if (enemy.health <= 0) {
+                                game.score += 50;
+                                // Guadagna una vita per ogni nemico ucciso (cap a 5)
+                                if (game.health < 5) {
+                                    game.health++;
+                                    createParticle(player.x + player.width/2, player.y + player.height/2, '#4ecdc4');
+                                }
+                                // Create explosion particles
+                                for (let i = 0; i < 5; i++) {
+                                    createParticle(enemy.x + enemy.width/2, enemy.y + enemy.height/2, '#ffeb3b');
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Player body collision (only when not attacking or attack missed)
+                if (!enemyHit && collision(player, enemy) && enemy.health > 0 && !player.invincible) {
+                    playerHit = true;
+                    // Enemy damages player
+                    game.health--;
+                    createParticle(player.x + player.width/2, player.y + player.height/2, '#ff3333');
+                    
+                    // Activate invincibility frames (5 secondi = 300 frame)
+                    player.invincible = true;
+                    player.invincibleTimer = 300;
+                    
+                    // Knockback
+                    player.velX = (player.x < enemy.x) ? -8 : 8;
+                    player.velY = -5;
+                    
+                    if (game.health <= 0) {
+                        game.gameOver = true;
+                    }
+                }
+            });
+        }
+        
+        // Update particles
+        function updateParticles() {
+            if (game.paused) return;
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.velX;
+                p.y += p.velY;
+                p.life--;
+                
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+        
+        // Draw player (Hello Knight)
+        function drawPlayer() {
+            const centerX = player.x + player.width / 2;
+            const centerY = player.y + player.height / 2;
+            
+            // Effetto lampeggio durante invincibilità
+            if (player.invincible && Math.floor(player.invincibleTimer / 5) % 2 === 0) {
+                // Non disegnare il player per effetto lampeggio
+                return;
+            }
+            
+            // Body (rettangolo bianco ancora più stretto)
+            const bodyWidth = 12.5;
+            drawRect(player.x + (player.width - bodyWidth)/2, player.y + 20, bodyWidth, player.height - 20, '#ffffff');
+            
+            // Head (cerchio bianco)
+            drawCircle(centerX, player.y + 15, 15, '#ffffff');
+            
+            // Solo scritta "hello" sulla faccia (senza occhi)
+            ctx.fillStyle = '#333333';
+            ctx.font = '10px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('hello', centerX, player.y + 18);
+            
+            // Attack effect - ispirato all'aculeo di Hollow Knight
+            if (player.attacking) {
+                const centerX = player.x + player.width / 2;
+                const centerY = player.y + player.height / 2;
+                
+                // Calcola progresso dell'attacco
+                const attackProgress = (15 - player.attackTimer) / 15;
+                
+                // Aculeo (nail) - forma allungata e appuntita (triplo più lungo)
+                const nailLength = 105;
+                const nailWidth = 4;
+                
+                // Posizione e rotazione dell'aculeo basata sul progresso
+                let angle;
+                if (player.direction > 0) {
+                    // Movimento da alto-sinistra a basso-destra
+                    angle = -Math.PI/4 + (attackProgress * Math.PI/2);
+                } else {
+                    // Movimento da alto-destra a basso-sinistra
+                    angle = -3*Math.PI/4 - (attackProgress * Math.PI/2);
+                }
+                
+                const nailX = centerX + Math.cos(angle) * 20;
+                const nailY = centerY + Math.sin(angle) * 20;
+                
+                // Disegna l'aculeo (totalmente bianco)
+                ctx.save();
+                ctx.translate(nailX, nailY);
+                ctx.rotate(angle);
+                
+                // Corpo dell'aculeo (bianco)
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(-nailLength/2, -nailWidth/2, nailLength, nailWidth);
+                
+                // Punta dell'aculeo (bianco)
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.moveTo(nailLength/2, 0);
+                ctx.lineTo(nailLength/2 + 8, -2);
+                ctx.lineTo(nailLength/2 + 8, 2);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Impugnatura (bianco)
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(-nailLength/2 - 8, -3, 8, 6);
+                
+                ctx.restore();
+                
+                // Effetto arco di movimento
+                ctx.strokeStyle = '#4ecdc4';
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.6;
+                ctx.beginPath();
+                
+                if (player.direction > 0) {
+                    ctx.arc(centerX, centerY, 25, -3*Math.PI/4, -Math.PI/4 * attackProgress);
+                } else {
+                    ctx.arc(centerX, centerY, 25, -Math.PI/4, -3*Math.PI/4 * attackProgress);
+                }
+                
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+                
+                // Scintille lungo la traiettoria
+                if (Math.random() < 0.7) {
+                    const sparkX = nailX + Math.cos(angle) * (nailLength/2);
+                    const sparkY = nailY + Math.sin(angle) * (nailLength/2);
+                    createParticle(sparkX, sparkY, '#4ecdc4');
+                }
+                
+                // Effetto "whoosh" all'inizio dell'attacco
+                if (player.attackTimer > 12) {
+                    for (let i = 0; i < 3; i++) {
+                        createParticle(centerX + (Math.random() - 0.5) * 20, 
+                                     centerY + (Math.random() - 0.5) * 20, '#ffffff');
+                    }
+                }
+            }
+        }
+        
+        // Draw platforms
+        function drawPlatforms() {
+            platforms.forEach(platform => {
+                drawRect(platform.x, platform.y, platform.width, platform.height, '#444', false);
+                drawRect(platform.x, platform.y, platform.width, 5, '#666', false);
+            });
+        }
+        
+        // Draw enemies
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                if (enemy.health <= 0) return;
+                
+                // Effetto lampeggio durante invincibilità dei nemici
+                if (enemy.invincible && Math.floor(enemy.invincibleTimer / 3) % 2 === 0) {
+                    // Nemico leggermente trasparente durante invincibilità
+                    ctx.globalAlpha = 0.5;
+                }
+                
+                const colors = {
+                    // Level 1
+                    'gruz': '#ff8c42',
+                    'fly': '#a8e6cf', 
+                    'big': '#ff6b6b',
+                    // Level 2
+                    'spiker': '#ff4757',
+                    'buzzer': '#7bed9f',
+                    'tank': '#5f27cd',
+                    'hopper': '#ff9ff3',
+                    // Level 3
+                    'runner': '#ff6348',
+                    'dart': '#2ed573',
+                    'heavy': '#747d8c',
+                    'guard': '#3742fa',
+                    // Level 4
+                    'elite': '#2f1b69',
+                    'wisp': '#00d2d3',
+                    'brute': '#8b0000',
+                    'shadow': '#2c2c54',
+                    'knight': '#40739e',
+                    'sentinel': '#c44569',
+                    // Level 5 (boss level)
+                    'boss1': '#8b0000',
+                    'minion': '#ff3838',
+                    'boss2': '#2c2c54',
+                    'phantom': '#40407a',
+                    'champion': '#ffd32a',
+                    'wraith': '#6c5ce7',
+                    'demon': '#a55eea'
+                };
+                
+                if (enemy.type === 'fly' || enemy.type === 'buzzer' || enemy.type === 'dart' || 
+                    enemy.type === 'wisp' || enemy.type === 'phantom' || enemy.type === 'minion') {
+                    // Flying enemies
+                    drawCircle(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.width/2, colors[enemy.type]);
+                    // Wings effect
+                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                    ctx.fillRect(enemy.x - 3, enemy.y + 3, 6, enemy.height - 6);
+                    ctx.fillRect(enemy.x + enemy.width - 3, enemy.y + 3, 6, enemy.height - 6);
+                } else if (enemy.type === 'big' || enemy.type === 'tank' || enemy.type === 'heavy' || 
+                          enemy.type === 'brute' || enemy.type === 'boss1' || enemy.type === 'boss2' || enemy.type === 'champion') {
+                    // Big square enemies
+                    drawRect(enemy.x, enemy.y, enemy.width, enemy.height, colors[enemy.type]);
+                    drawCircle(enemy.x + 8, enemy.y + 8, 3, '#fff');
+                    drawCircle(enemy.x + enemy.width - 8, enemy.y + 8, 3, '#fff');
+                    drawRect(enemy.x + 5, enemy.y + enemy.height - 8, enemy.width - 10, 3, '#333');
+                } else {
+                    // Round enemies
+                    drawCircle(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.width/2, colors[enemy.type]);
+                    drawCircle(enemy.x + enemy.width/2 - 3, enemy.y + enemy.height/2 - 2, 2, '#fff');
+                    drawCircle(enemy.x + enemy.width/2 + 3, enemy.y + enemy.height/2 - 2, 2, '#fff');
+                }
+                
+                // Health indicator
+                for (let i = 0; i < enemy.health; i++) {
+                    drawCircle(enemy.x + 5 + (i * 6), enemy.y - 8, 2, '#4ecdc4');
+                }
+                
+                // Reset alpha
+                ctx.globalAlpha = 1;
+            });
+        }
+        
+        // Draw particles
+        function drawParticles() {
+            particles.forEach(p => {
+                const alpha = p.life / 30;
+                ctx.fillStyle = p.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+                ctx.fillRect(p.x - 1, p.y - 1, 3, 3);
+            });
+        }
+        
+        // Draw UI
+        function drawUI() {
+            // Draw hit streak bar on the right side
+            const barWidth = 20;
+            const barHeight = 200;
+            const barX = canvas.width - barWidth - 10;
+            const barY = 50;
+            
+            // Background della barra
+            drawRect(barX, barY, barWidth, barHeight, 'rgba(0,0,0,0.5)');
+            drawRect(barX, barY, barWidth, barHeight, '#666', true);
+            
+            // Riempimento della barra (dal basso verso l'alto)
+            const fillHeight = (game.hitStreak / game.maxHitStreak) * barHeight;
+            if (fillHeight > 0) {
+                // Gradiente di colore basato sul livello
+                let barColor = '#4ecdc4'; // Ciano di default
+                if (game.hitStreak >= 4) barColor = '#ffd32a'; // Giallo
+                if (game.hitStreak >= 6) barColor = '#ff6b6b'; // Rosso
+                
+                drawRect(barX, barY + barHeight - fillHeight, barWidth, fillHeight, barColor);
+            }
+            
+            // Divisori per mostrare i livelli
+            for (let i = 1; i < game.maxHitStreak; i++) {
+                const dividerY = barY + barHeight - (i / game.maxHitStreak) * barHeight;
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(barX, dividerY);
+                ctx.lineTo(barX + barWidth, dividerY);
+                ctx.stroke();
+            }
+            
+            // Testo sopra la barra
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('HIT', barX + barWidth/2, barY - 20);
+            ctx.fillText(`${game.hitStreak}/${game.maxHitStreak}`, barX + barWidth/2, barY - 5);
+            
+            if (game.won) {
+                // Victory screen
+                drawRect(0, 0, canvas.width, canvas.height, 'rgba(0,50,0,0.8)');
+                drawText('🎉 VITTORIA! 🎉', canvas.width/2, canvas.height/2 - 40, '#4ecdc4', '32px');
+                drawText('Hai completato tutti i 5 livelli!', canvas.width/2, canvas.height/2 - 10, '#4ecdc4', '20px');
+                drawText(`Punteggio Finale: ${game.score}`, canvas.width/2, canvas.height/2 + 20, '#ffeb3b', '18px');
+                drawText('Hello Knight salva la giornata!', canvas.width/2, canvas.height/2 + 50, '#fff', '16px');
+                drawText('Ricarica per giocare ancora!', canvas.width/2, canvas.height/2 + 80, '#ccc', '14px');
+            } else if (game.gameOver) {
+                // Game over screen
+                drawRect(0, 0, canvas.width, canvas.height, 'rgba(0,0,0,0.7)');
+                drawText('GAME OVER', canvas.width/2, canvas.height/2 - 20, '#ff6b6b', '24px');
+                drawText(`Punteggio Finale: ${game.score}`, canvas.width/2, canvas.height/2 + 10, '#4ecdc4', '18px');
+                drawText('Ricarica per riprovare!', canvas.width/2, canvas.height/2 + 40, '#fff', '14px');
+            } else if (game.paused) {
+                // Pause screen
+                drawRect(0, 0, canvas.width, canvas.height, 'rgba(0,0,0,0.5)');
+                drawText('⏸️ PAUSA ⏸️', canvas.width/2, canvas.height/2 - 20, '#4ecdc4', '32px');
+                drawText('Premi ESC, P o il pulsante RIPRENDI', canvas.width/2, canvas.height/2 + 20, '#fff', '16px');
+            }
+            
+            // Update HTML UI
+            document.getElementById('health').textContent = game.health;
+            document.getElementById('score').textContent = game.score;
+            document.getElementById('level').textContent = game.level;
+        }
+        
+        // Main game loop
+        function gameLoop() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Update
+            updatePlayer();
+            updateEnemies();
+            updateParticles();
+            
+            // Draw
+            drawPlatforms();
+            drawPlayer();
+            drawEnemies();
+            drawParticles();
+            drawUI();
+            
+            // Continue loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start game
+        gameLoop();
+    </script>
+</body>
+</html>
